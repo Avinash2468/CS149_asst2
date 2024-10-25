@@ -270,16 +270,23 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
-    
+    // std::cout<<"ABOUT TO NOTIFY ALL THE THREADS FOR THE LAST TIME"<<std::endl;
+
+    // assert(1==2);
+
+    // Signal to dispatch threads that it's time to wrap up
+
     std::unique_lock<std::mutex> lock(queueMutex);
     keepRunning = false;
     cv_start.notify_all();
     lock.unlock();
 
-    for(int i = 0; i < num_threads_; i++)
+    // Wait for threads to finish before we exit
+    for(size_t i = 0; i < num_threads_; i++)
     {
         if(thread_pool[i].joinable())
         {
+            // printf("Destructor: Joining thread %zu until completion", i);
             thread_pool[i].join();
         }
     }
@@ -291,6 +298,9 @@ void TaskSystemParallelThreadPoolSleeping::threadFunc(int i){
 
     do
     {
+
+        cv_end.notify_all();
+
         // Wait until we have data or a quit signal
         cv_start.wait(lock, [this] {
             return (!tasks.empty() || !keepRunning);
@@ -309,9 +319,6 @@ void TaskSystemParallelThreadPoolSleeping::threadFunc(int i){
             op();
 
             lock.lock();
-
-
-            cv_end.notify_all();
         }
         
 
@@ -327,15 +334,39 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
 
+    // unsigned int n = std::thread::hardware_concurrency();
+    // std::cout << n << " concurrent threads are supported.\n";
+
     for (int i = 0; i < num_total_tasks; i++) {
+        // std::cout<<"Pushing task number: "<<i<<std::endl;
         queueMutex.lock();
-        tasks.push([runnable, i, num_total_tasks] {runnable->runTask(i, num_total_tasks);});
+        // std::cout<<"Inside the lock for: "<<i<<std::endl;
+        tasks.push([this, runnable, i, num_total_tasks] {
+            runnable->runTask(i, num_total_tasks);
+            taskCompleted++;
+            // std::cout<<"Completed task: "<<taskCompleted<<std::endl;
+            cv_end.notify_all();
+        });
         queueMutex.unlock();
+        taskCount++;
         cv_start.notify_one();
+        // std::cout<<"End of for loop"<<std::endl;
     }
+    // std::cout<<std::endl;
+
+
+    // std::cout<<"Done pushing all the tasks. Task count is: "<<taskCount<<std::endl;
+    // std::cout<<"Done pushing all the tasks. Completed so far is: "<<taskCompleted<<std::endl;
+    // std::cout<<"Number of tasks left? "<<tasks.size()<<std::endl;
 
     std::unique_lock<std::mutex> lk(taskCompletedMutex);
-    cv_end.wait(lk, [this]{return tasks.empty();});
+    cv_end.wait(lk, [this]{return (tasks.empty() && (taskCompleted==taskCount));});
+
+    
+    // cv_end.wait(lk, [this]{return tasks.empty();});
+    // taskCompletedMutex.unlock();
+
+    // std::cout<<"Done with run"<<std::endl;
 }
 
 // void TaskSystemParallelThreadPoolSleeping::threadFunc(int i){

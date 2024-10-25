@@ -7,6 +7,8 @@
 #include <atomic>
 #include <set>
 
+#include <iostream>
+
 #include "CycleTimer.h"
 #include "itasksys.h"
 
@@ -530,8 +532,20 @@ TestResults simpleTest(ITaskSystem* t, bool do_async) {
         t->runAsyncWithDeps(&second, num_tasks, secondDeps);
         t->sync();
     } else {
+        // std::cout<<"Running the first task"<<std::endl;
         t->run(&first, num_tasks);
+        // std::cout<<"After running the first task"<<std::endl;
+        // for (int i=0; i<num_elements; i++){
+        //     std::cout<<i<<":"<<array[i]<<" ";
+        // }
+        // std::cout<<std::endl;
+        // std::cout<<"Running the second task"<<std::endl;
         t->run(&second, num_tasks);
+        // std::cout<<"After running the second task"<<std::endl;
+        // for (int i=0; i<num_elements; i++){
+        //     std::cout<<i<<":"<<array[i]<<" ";
+        // }
+        // std::cout<<std::endl;
     }
     double end_time = CycleTimer::currentSeconds();
 
@@ -542,15 +556,19 @@ TestResults simpleTest(ITaskSystem* t, bool do_async) {
     for (int i=0; i<num_elements; i++) {
         int value = i+1;
 
+        // std::cout<<i<<" Original value: "<<value<<std::endl;
+
         for (int j=0; j<num_bulk_task_launches; j++)
             value = SimpleMultiplyTask::multiply_task(3, value);
 
         int expected = value;
         if (array[i] != expected) {
+            // std::cout<<"Failed case: "<<i<<" expected: "<<expected<<" actual: "<<array[i]<<std::endl;
             results.passed = false;
             printf("%d: %d expected=%d\n", i, array[i], expected);
             break;
         }
+        // std::cout<<"Passed case: "<<i<<" expected: "<<expected<<" actual: "<<array[i]<<std::endl;
     }
     results.time = end_time - start_time;
 
