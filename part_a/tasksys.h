@@ -98,8 +98,6 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
 
         std::queue<std::function<void()>>tasks;
         std::mutex queueMutex;
-        int taskCount=0;
-        std::atomic<int> taskCompleted{0};
         std::mutex taskCompletedMutex;
 
         void threadFunc(int i);

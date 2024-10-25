@@ -6,7 +6,7 @@
 #include <condition_variable>
 #include <functional>
 
-#include <chrono>
+#include <cassert>
 
 
 IRunnable::~IRunnable() {}
@@ -244,6 +244,25 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     }
 }
 
+// TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
+//     //
+//     // TODO: CS149 student implementations may decide to perform cleanup
+//     // operations (such as thread pool shutdown construction) here.
+//     // Implementations are free to add new class member variables
+//     // (requiring changes to tasksys.h).
+//     //
+//     // std::cout<<"ABOUT TO NOTIFY ALL THE THREADS FOR THE LAST TIME"<<std::endl;
+
+//     keepRunning = false;
+//     cv_start.notify_all();
+
+//     for(int i = 0; i < num_threads_; i++) {
+//             thread_pool[i].join(); // Ensure threads finish before destructing
+//     }
+//     delete[] thread_pool; 
+    
+// }
+
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //
     // TODO: CS149 student implementations may decide to perform cleanup
@@ -251,64 +270,52 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
-    // std::cout<<"Program has finished running"<<std::endl;
+    
+    std::unique_lock<std::mutex> lock(queueMutex);
     keepRunning = false;
     cv_start.notify_all();
-    for(int i = 0; i < num_threads_; i++) {
-            thread_pool[i].join(); // Ensure threads finish before destructing
+    lock.unlock();
+
+    for(int i = 0; i < num_threads_; i++)
+    {
+        if(thread_pool[i].joinable())
+        {
+            thread_pool[i].join();
+        }
     }
-    // delete[] thread_pool; 
-
+    
 }
-
 void TaskSystemParallelThreadPoolSleeping::threadFunc(int i){
     
-    std::function<void()> task;
-    bool check = false;
+    std::unique_lock<std::mutex> lock(queueMutex);
 
-    while(keepRunning){
-        // std::cout<<"Entered loop"<<std::endl;
-        std::unique_lock<std::mutex> lock(queueMutex);
-        cv_start.wait(lock, [this]{return (!tasks.empty() || !keepRunning);});
-        // cv_start.wait(lock);
-
-        // std::cout<<"For thread: "<<i<<" Left the conditional wait"<<std::endl;
+    do
+    {
+        // Wait until we have data or a quit signal
+        cv_start.wait(lock, [this] {
+            return (!tasks.empty() || !keepRunning);
+        });
 
         if (tasks.empty() && !keepRunning)
-        {
-            // std::cout<<"Entered break"<<i<<std::endl;
-            lock.unlock();
             break;
-        }
-            
 
-        // std::cout<<"There are tasks to run"<<std::endl;
-        
-        check = false;
-        // std::cout<<"Right after the lock starts: "<<i<<std::endl;
-        if(!tasks.empty())
-        {
-            // std::cout<<"Task queue is not empty: "<<i<<std::endl;
-            task = std::move(tasks.front());
+        if(!tasks.empty()){
+            auto op = std::move(tasks.front());
             tasks.pop();
-            check = true;
+
+            // unlock now that we're done messing with the queue
+            lock.unlock();
+
+            op();
+
+            lock.lock();
+
+
+            cv_end.notify_all();
         }
-        // std::cout<<"Right before the ending of the lock: "<<i<<std::endl;
-        lock.unlock();
-        if (check){
-            // std::cout<<"Extracted the task to run"<<std::endl;
-            task();
-            // std::cout<<"Finished running the task"<<std::endl;
-            taskCompleted++;
-        }
-        // std::cout<<"Exited everything"<<std::endl;
-        cv_end.notify_one();
-        // std::cout<<"Finished notifying"<<std::endl;
-        // std::cout<<"Total task count is: "<<taskCount<<std::endl;
-        // std::cout<<"Total completed is: "<<taskCompleted<<std::endl;
-        // std::cout<<"Is tasks empty?"<<tasks.empty()<<std::endl;
-    }
-    // std::cout<<"FINALLY EXITED THE WHILE LOOP"<<std::endl;
+        
+
+    } while(keepRunning);
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
@@ -320,31 +327,67 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
 
-    // unsigned int n = std::thread::hardware_concurrency();
-    // std::cout << n << " concurrent threads are supported.\n";
-
     for (int i = 0; i < num_total_tasks; i++) {
-        // std::cout<<"Pushing task number: "<<i<<std::endl;
         queueMutex.lock();
-        // std::cout<<"Inside the lock for: "<<i<<std::endl;
         tasks.push([runnable, i, num_total_tasks] {runnable->runTask(i, num_total_tasks);});
-        taskCount++;
         queueMutex.unlock();
         cv_start.notify_one();
-        // std::cout<<"End of for loop"<<std::endl;
     }
 
-    // std::cout<<"Done pushing all the tasks. Task count is: "<<taskCount<<std::endl;
-
     std::unique_lock<std::mutex> lk(taskCompletedMutex);
-    cv_end.wait(lk, [this]{return (tasks.empty() && (taskCompleted==taskCount));});
-    // taskCompletedMutex.unlock();
-
-    // std::cout<<"Passed the conditional wait"<<std::endl;
-    // for (int i = 0; i < num_total_tasks; i++) {
-    //     runnable->runTask(i, num_total_tasks);
-    // }
+    cv_end.wait(lk, [this]{return tasks.empty();});
 }
+
+// void TaskSystemParallelThreadPoolSleeping::threadFunc(int i){
+    
+//     std::function<void()> task;
+//     bool check = false;
+
+//     while(keepRunning){
+//         // std::cout<<"Entered loop"<<std::endl;
+//         std::unique_lock<std::mutex> lock(queueMutex);
+//         cv_start.wait(lock, [this]{return (!tasks.empty() || !keepRunning);});
+//         // cv_start.wait(lock);
+
+//         // std::cout<<"For thread: "<<i<<" Left the conditional wait, and value of keepRunning: "<<keepRunning<<"Tasks empty: "<<tasks.empty()<<std::endl;
+
+//         if (tasks.empty() && !keepRunning)
+//         {
+//             // std::cout<<"Entered break"<<i<<std::endl;
+//             break;
+//         }
+            
+
+//         // std::cout<<"There are tasks to run"<<std::endl;
+        
+//         check = false;
+//         // std::cout<<"Right after the lock starts: "<<i<<std::endl;
+//         if(!tasks.empty())
+//         {
+//             // std::cout<<"Task queue is not empty: "<<i<<std::endl;
+//             task = std::move(tasks.front());
+//             tasks.pop();
+//             check = true;
+//         }
+//         // std::cout<<"Right before the ending of the lock: "<<i<<std::endl;
+//         lock.unlock();
+//         if (check){
+//             // std::cout<<"Extracted the task to run"<<std::endl;
+//             task();
+//             // std::cout<<"Finished running the task"<<std::endl;
+//             taskCompleted++;
+//         }
+//         // std::cout<<"Exited everything"<<std::endl;
+//         cv_end.notify_one();
+//         // std::cout<<"Finished notifying"<<std::endl;
+//         // std::cout<<"Total task count is: "<<taskCount<<std::endl;
+//         // std::cout<<"Total completed is: "<<taskCompleted<<std::endl;
+//         // std::cout<<"Is tasks empty?"<<tasks.empty()<<std::endl;
+//     }
+//     // std::cout<<"FINALLY EXITED THE WHILE LOOP"<<std::endl;
+// }
+
+
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                                     const std::vector<TaskID>& deps) {
