@@ -27,12 +27,12 @@ PERF_THRESHOLD = 1.2
 NUM_TEST_RUNS = 5
 
 LIST_OF_TESTS = [
+    ("math_operations_in_tight_for_loop", UNSPECIFIED_NUM_THREADS),
+    ("ping_pong_equal", UNSPECIFIED_NUM_THREADS),
     ("super_super_light", UNSPECIFIED_NUM_THREADS),
     ("super_light", UNSPECIFIED_NUM_THREADS),
-    ("ping_pong_equal", UNSPECIFIED_NUM_THREADS),
     ("ping_pong_unequal", UNSPECIFIED_NUM_THREADS),
     ("recursive_fibonacci", UNSPECIFIED_NUM_THREADS),
-    ("math_operations_in_tight_for_loop", UNSPECIFIED_NUM_THREADS),
     ("math_operations_in_tight_for_loop_fewer_tasks", UNSPECIFIED_NUM_THREADS),
     ("math_operations_in_tight_for_loop_fan_in", UNSPECIFIED_NUM_THREADS),
     ("math_operations_in_tight_for_loop_reduction_tree", UNSPECIFIED_NUM_THREADS),

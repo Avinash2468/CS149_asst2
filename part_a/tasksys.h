@@ -2,6 +2,14 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <thread>
+#include <vector>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+
+#include <atomic>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -17,6 +25,7 @@ class TaskSystemSerial: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
 };
 
 /*
@@ -34,6 +43,12 @@ class TaskSystemParallelSpawn: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+        int num_threads_;
+        std::thread* thread_pool;
+
+        std::atomic<int> counter{0};
+        void threadFunc(IRunnable* runnable, int num_total_tasks);
 };
 
 /*
@@ -51,6 +66,18 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+        int num_threads_;
+        bool keepRunning = true;
+        std::thread* thread_pool;
+        std::mutex queueMutex;
+        std::queue<std::function<void()>>tasks;
+
+        std::mutex taskCompletedMutex;
+        std::atomic<int> taskCompleted{0};
+        int taskCount = 0;
+        void threadFunc();
+        std::condition_variable cv;
 };
 
 /*
@@ -68,6 +95,22 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+        std::queue<std::function<void()>>tasks;
+        std::mutex queueMutex;
+        int taskCount=0;
+        std::atomic<int> taskCompleted{0};
+        std::mutex taskCompletedMutex;
+
+        void threadFunc(int i);
+
+        int num_threads_;
+        bool keepRunning = true;
+        std::thread* thread_pool;
+
+        std::condition_variable cv_start;
+        std::condition_variable cv_queue;
+        std::condition_variable cv_end;
 };
 
 #endif
