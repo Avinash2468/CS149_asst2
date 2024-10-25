@@ -111,6 +111,10 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::condition_variable cv_start;
         std::condition_variable cv_queue;
         std::condition_variable cv_end;
+
+        // std::atomic<int> busy{0};
+        int busy = 0;
+        bool stop = false;
 };
 
 #endif
