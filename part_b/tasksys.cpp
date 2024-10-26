@@ -1,5 +1,16 @@
 #include "tasksys.h"
 
+#include <mutex>
+#include <atomic>
+#include <condition_variable>
+#include <queue>
+#include <iostream>
+#include <map>
+#include <vector>
+#include <thread>
+
+#include <algorithm>
+
 
 IRunnable::~IRunnable() {}
 
@@ -133,6 +144,20 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    num_threads_ = num_threads;
+    thread_pool = new std::thread[num_threads];
+
+    keepRunning = true;
+    max_task = -1;
+    next_task = 0;
+
+    waiting_queue_lock = new std::mutex();
+    ready_queue_lock = new std::mutex();
+    task_lock = new std::mutex();
+
+    for (int i = 0; i < num_threads_; i++) {
+        thread_pool[i] = std::thread(&TaskSystemParallelThreadPoolSleeping::threadFunc, this);
+    }
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -142,6 +167,15 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    keepRunning = false;
+    for (int i = 0; i < num_threads_; i++) {
+        thread_pool[i].join();
+    }
+
+    delete task_lock;
+    delete waiting_queue_lock;
+    delete ready_queue_lock;
+
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
@@ -153,10 +187,65 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    // for (int i = 0; i < num_total_tasks; i++) {
+    //     runnable->runTask(i, num_total_tasks);
+    // }
+
+    runAsyncWithDeps(runnable, num_total_tasks, {});
+    sync();
+
+}
+
+void TaskSystemParallelThreadPoolSleeping::threadFunc() {
+    while (keepRunning) {
+        bool shouldDispatch = false;
+        ReadyTask currentTask;
+
+        // Lock ready queue and attempt to get the next task
+        std::unique_lock<std::mutex> readyLock(*ready_queue_lock);
+
+        if (!ready_queue.empty()) {
+            currentTask = ready_queue.front();
+            
+            if (currentTask.cur_task >= currentTask.num_total_tasks) {
+                ready_queue.pop();  // Task batch is completed, remove from queue
+            } else {
+                ready_queue.front().cur_task++;
+                shouldDispatch = true;  // Task is ready to dispatch
+            }
+        } else {
+            // Move eligible tasks from waiting queue to ready queue
+            std::lock_guard<std::mutex> waitingLock(*waiting_queue_lock);
+
+            while (!waiting_queue.empty()) {
+                auto& nextTask = waiting_queue.top();
+
+                if (nextTask.max_dep_task > max_task) break; // Dependencies not met
+
+                // Move task to ready queue and track progress
+                ready_queue.emplace(nextTask.id, nextTask.runnable, nextTask.num_total_tasks);
+                task_tracker[nextTask.id] = {0, nextTask.num_total_tasks};
+                waiting_queue.pop();
+            }
+        }
+        
+        readyLock.unlock();  // Unlock ready queue
+
+        if (shouldDispatch) {
+            // Execute the current task
+            currentTask.runnable->runTask(currentTask.cur_task, currentTask.num_total_tasks);
+
+            // Update task progress metadata
+            std::lock_guard<std::mutex> taskLock(*task_lock);
+            auto& taskProgress = task_tracker[currentTask.id];
+            if (++taskProgress.first == taskProgress.second) {
+                task_tracker.erase(currentTask.id);
+                max_task = std::max(currentTask.id, max_task);
+            }
+        }
     }
 }
+
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                                     const std::vector<TaskID>& deps) {
@@ -166,11 +255,20 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     // TODO: CS149 students will implement this method in Part B.
     //
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    // for (int i = 0; i < num_total_tasks; i++) {
+    //     runnable->runTask(i, num_total_tasks);
+    // }
+
+    // return 0;
+
+    TaskID dep = deps.empty() ? -1 : *std::max(deps.begin(), deps.end());
+
+    {
+        std::lock_guard<std::mutex> lock(*waiting_queue_lock);
+        waiting_queue.push(WaitingTask(next_task, dep, runnable, num_total_tasks));
     }
 
-    return 0;
+    return next_task++;    
 }
 
 void TaskSystemParallelThreadPoolSleeping::sync() {
@@ -179,5 +277,10 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     // TODO: CS149 students will modify the implementation of this method in Part B.
     //
 
+    // return;
+    while (true) {
+        std::lock_guard<std::mutex> lock(*task_lock);
+        if (max_task + 1 == next_task) break;
+   }
     return;
 }
