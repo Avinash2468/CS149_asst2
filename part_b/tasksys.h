@@ -79,7 +79,10 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 //         void sync();
 // };
 
-struct WaitingTask {
+
+
+class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+    struct WaitingTask {
     TaskID id; 
     TaskID max_dep_task; 
     IRunnable* runnable; 
@@ -88,46 +91,40 @@ struct WaitingTask {
     bool operator<(const WaitingTask& other) const {
         return max_dep_task > other.max_dep_task;
     }
-};
+    };
 
-struct ReadyTask {
-    TaskID id;
-    IRunnable* runnable;
-    int cur_task;
-    int num_total_tasks;
-    ReadyTask(TaskID id, IRunnable* runnable, int num_total_tasks):id(id), runnable(runnable), cur_task{0}, num_total_tasks(num_total_tasks) {}
-    ReadyTask(){}
-};
-
-
-class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+    struct ReadyTask {
+        TaskID id;
+        IRunnable* runnable;
+        int cur_task;
+        int num_total_tasks;
+        ReadyTask(TaskID id, IRunnable* runnable, int num_total_tasks):id(id), runnable(runnable), cur_task{0}, num_total_tasks(num_total_tasks) {}
+        ReadyTask(){}
+    };
     public:
-        int num_threads_;
-        std::thread* thread_pool;
-
-        TaskID max_task;         
-        TaskID next_task;
-        std::map<TaskID, std::pair<int, int> > task_tracker;
-                 
-
-        bool keepRunning;         
-        
-
-        std::priority_queue<WaitingTask, std::vector<WaitingTask> > waiting_queue;
-        std::queue<ReadyTask> ready_queue;
-
-        std::mutex* task_lock; 
-        std::mutex* waiting_queue_lock;
-        std::mutex* ready_queue_lock;
-
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
         const char* name();
-        void run(IRunnable* runnable, int num_total_tasks);
+        void workerThread();
         void threadFunc();
-        TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
-                                const std::vector<TaskID>& deps);
-        void sync();
-};
 
+        void run(IRunnable* runnable, int num_total_tasks);
+        TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps);
+        void sync();
+
+        int num_threads_;
+        std::thread* thread_pool;
+        std::atomic<bool> keepRunning;
+
+        std::mutex *waiting_queue_lock, *ready_queue_lock, *task_lock;
+        std::condition_variable ready_cv, sync_cv;  // Condition variables for task availability and sync
+
+        TaskID max_task;
+        TaskID next_task;
+        std::priority_queue<WaitingTask> waiting_queue;
+        std::queue<ReadyTask> ready_queue;
+        std::map<TaskID, std::pair<int, int>> task_tracker;
+
+        static constexpr int ready_queue_threshold = 2;  // Threshold for checking dependencies in waiting queue
+};
 #endif

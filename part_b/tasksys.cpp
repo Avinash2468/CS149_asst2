@@ -284,3 +284,31 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
    }
     return;
 }
+
+// TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int num_threads) 
+//     : ITaskSystem(num_threads), keepRunning(true), max_task(-1), next_task(0), num_threads_(num_threads) {
+
+//     thread_pool = new std::thread[num_threads];
+    
+//     for (int i = 0; i < num_threads_; i++) {
+//         thread_pool[i] = std::thread(&TaskSystemParallelThreadPoolSleeping::threadFunc, this);
+//     }
+// }
+
+// TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps) {
+//     TaskID dep = deps.empty() ? -1 : *std::max(deps.begin(), deps.end());
+
+//     {
+//         std::lock_guard<std::mutex> lock(*waiting_queue_lock);
+//         waiting_queue.push(WaitingTask(next_task, dep, runnable, num_total_tasks));
+//     }
+
+//     ready_cv.notify_one();  
+
+//     return next_task++;
+// }
+
+// void TaskSystemParallelThreadPoolSleeping::sync() {
+//     std::unique_lock<std::mutex> lock(*task_lock);
+//     sync_cv.wait(lock, [this]() { return max_task + 1 == next_task; });
+// }
